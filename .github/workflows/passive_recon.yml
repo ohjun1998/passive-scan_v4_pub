@@ -64,7 +64,7 @@ jobs:
     - name: Upload Encrypted Matrix Results
       uses: actions/upload-artifact@v4
       with:
-        name: results-${{ matrix.tool }}-${{ matrix.group }}
+        name: results-${{ matrix.tool }}--${{ matrix.group }}
         path: encrypted_data/results_${{ matrix.tool }}_${{ matrix.group }}.tar.gz.gpg
         retention-days: 1
 
@@ -81,7 +81,6 @@ jobs:
       with:
         python-version: '3.10'
 
-    # 구글 라이브러리를 걷어내고 가벼운 openpyxl과 requests 패키지만 설치합니다.
     - name: Install Dependencies
       run: pip install openpyxl requests
 
@@ -110,9 +109,9 @@ jobs:
     - name: Build Intelligent Excel Report
       run: python txt_to_excel.py
 
-    # [보안 사출 전면 개조]: 구글 드라이브 대신 디스코드 웹훅 채널로 마스터 엑셀 자동 전송
+    # [보안 사출 전면 개조]: 업로드 파일명 동기화 완료
     - name: Upload Final Excel Report to Private Discord
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: |
-        python upload_to_gdrive.py
+        python upload_to_discord.py

@@ -33,7 +33,7 @@ def upload_report_safe_engine():
     DISCORD_LIMIT = 9.5 * 1024 * 1024 # 안전 전송 마지노선 (9.5MB)
 
     # -----------------------------------------------------------------
-    # [Case 1] 압축 결과가 9.5MB 이하인 경우 -> 통째로 단일 파일 직송 (가장 이상적)
+    # [Case 1] 압축 결과가 9.5MB 이하인 경우 -> 통째로 단일 파일 직송
     # -----------------------------------------------------------------
     if compressed_size <= DISCORD_LIMIT:
         print("[+] Compressed file is within Discord limits. Transmitting natively...")
@@ -50,11 +50,17 @@ def upload_report_safe_engine():
             print(f"[-] Discord error: {response.status_code}, {response.text}")
 
     # -----------------------------------------------------------------
-    # [Case 2] 압축해도 9.5MB를 초과하는 경우 -> 안전 분할 자동 사출 + 복원 가이드 동봉
+    # [🔥Case 2 개조] 9.5MB 초과 시 모든 조각을 한 알람(메시지)에 패킹해서 직송
     # -----------------------------------------------------------------
     else:
-        print("[!] Warning: Compressed size still exceeds limit. Activating chunk splitter...")
+        print("[!] Warning: Compressed size exceeds limit. Gathering chunks into a single message packet...")
         part_num = 1
+        files_payload = {}
+        
+        # [핵심] 반복문 내에서 전송하지 않고, 파일 스트림 오브젝트들을 하나의 딕셔너리에 다 누적합니다.
+        # 바이너리 유실 방지를 위해 파일 핸들러들을 open 상태로 유지하기 위한 리스트 생성
+        opened_files = []
+        
         with open(zip_file_path, 'rb') as f:
             while True:
                 chunk = f.read(int(DISCORD_LIMIT))
@@ -62,28 +68,49 @@ def upload_report_safe_engine():
                     break
                 
                 chunk_name = f"{zip_file_name}.part{part_num}"
-                print(f"[+] Sending segment: {chunk_name}")
                 
-                # 디스코드 창에 대입할 운영체제별 복원 가이드라인 텍스트 조립
-                cmd_win = f"copy /b {zip_file_name}.part* {zip_file_name}"
-                cmd_mac = f"cat {zip_file_name}.part* > {zip_file_name}"
+                # 가상머신 임시 경로에 각 조각을 바이너리로 잠깐 떨궈놓고 requests에 바인딩
+                temp_chunk_path = os.path.join('reports', chunk_name)
+                with open(temp_chunk_path, 'wb') as tmp:
+                    tmp.write(chunk)
                 
-                payload = {
-                    'content': (
-                        f"📦 **[대용량 분할 사출] 마스터 보고서 Part {part_num}**\n"
-                        f"💡 모든 조각을 다운로드한 후, 터미널(콘솔)에서 아래 명령어를 실행하여 합쳐주세요!\n"
-                        f"```cmd\n"
-                        f"※ Windows (CMD):\n{cmd_win}\n\n"
-                        f"※ Mac / Linux:\n{cmd_mac}\n"
-                        f"```"
-                    )
-                }
-                files_payload = {'file': (chunk_name, chunk, 'application/octet-stream')}
+                # 전송용 파일 포인터 오픈 후 페이로드 딕셔너리에 탑재
+                target_f = open(temp_chunk_path, 'rb')
+                opened_files.append(target_f)
+                files_payload[f'file[{part_num-1}]'] = (chunk_name, target_f, 'application/octet-stream')
                 
-                requests.post(webhook_url, data=payload, files=files_payload)
                 part_num += 1
-                
-        print("[+] [SUCCESS] All compressed chunks safely bypass restrictions and landed in Discord!")
+        
+        # 안내 문구 및 터미널 명령어 조립 (딱 1번만 출력됨)
+        cmd_win = f"copy /b {zip_file_name}.part* {zip_file_name}"
+        cmd_mac = f"cat {zip_file_name}.part* > {zip_file_name}"
+        
+        payload = {
+            'content': (
+                f"📦 **[대용량 통합 분할 사출] 마스터 보고서 (총 {part_num - 1}개 조각)**\n"
+                f"💡 모든 파일 조각이 단 하나의 알림으로 묶여 배달되었습니다.\n"
+                f"ℹ️ 아래 첨부된 파일들을 **모두 한 폴더에 다운로드**한 뒤 터미널에서 병합 명령어를 실행하세요.\n"
+                f"```cmd\n"
+                f"※ Windows (CMD):\n{cmd_win}\n\n"
+                f"※ Mac / Linux:\n{cmd_mac}\n"
+                f"```"
+            )
+        }
+        
+        print(f"[+] Transmitting all {part_num - 1} files simultaneously in a single Discord request...", flush=True)
+        response = requests.post(webhook_url, data=payload, files=files_payload)
+        
+        # 오픈했던 임시 파일들 깔끔하게 클로즈 및 가상머신 잔여물 청소
+        for tf in opened_files:
+            tf.close()
+        for p in range(1, part_num):
+            try: os.remove(os.path.join('reports', f"{zip_file_name}.part{p}"))
+            except: pass
+            
+        if response.status_code in [200, 204]:
+            print("[+] [SUCCESS] Consolidated Discord transmission complete!")
+        else:
+            print(f"[-] Discord error: {response.status_code}, {response.text}")
 
 if __name__ == '__main__':
     upload_report_safe_engine()

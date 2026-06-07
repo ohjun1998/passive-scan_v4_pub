@@ -6,7 +6,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 
 def build_advanced_excel_report():
-    print("[+] Initializing Intelligent Excel Reporter Engine (SecretFinder Dedicated Dashboard)...", flush=True)
+    print("[+] Initializing Intelligent Excel Reporter Engine (Summary & SecretFinder Mode)...", flush=True)
     
     # 1. 마스터 타깃 목록 로드
     if not os.path.exists('targets.txt'):
@@ -56,7 +56,7 @@ def build_advanced_excel_report():
             print(f"[-] Error reading {filename}: {e}", flush=True)
 
     # 3. 엑셀 문서 빌드 시작
-    print("[+] Compiling SecretFinder Only Dashboard & High Risk sheets...", flush=True)
+    print("[+] Compiling Dashboard & High Risk sheets...", flush=True)
     wb = Workbook()
 
     font_header = Font(name='Malgun Gothic', size=11, bold=True, color='FFFFFF')
@@ -64,11 +64,11 @@ def build_advanced_excel_report():
     align_center = Alignment(horizontal='center', vertical='center')
 
     # -----------------------------------------------------------------
-    # [🔥대시보드 전면 개조] gau, waybackurls 제거 -> 오직 SecretFinder 전용 통계
+    # [🔥대시보드 칼럼 재조율] 총 URL 합계와 SecretFinder 건수만 깔끔하게 노출
     # -----------------------------------------------------------------
     ws_dash = wb.active
     ws_dash.title = "Dashboard"
-    dash_headers = ["No", "Target (대상 자산 주소 / URL)", "SecretFinder Count (보안 기밀 탐지 건수)"]
+    dash_headers = ["No", "Target Domain (대상 도메인)", "Total URLs (총 URL 합계)", "SecretFinder Count (SecretFinder 탐지 건수)"]
     ws_dash.append(dash_headers)
     ws_dash.row_dimensions[1].height = 26
     for col_num, text in enumerate(dash_headers, 1):
@@ -100,10 +100,11 @@ def build_advanced_excel_report():
         if not dataset:
             continue  
             
-        # [A] 대시보드 연산: 오직 SecretFinder 건수만 카운트 (gau, waybackurls 원천 배제)
-        secret_criticals = sum(1 for url, tool in dataset if tool == 'SecretFinder')
+        # [A] 대시보드 통계 계산 연산
+        total_urls = len(dataset) # 도메인별 긁어모은 순수 URL 개수 전체 합산
+        secret_criticals = sum(1 for url, tool in dataset if tool == 'SecretFinder') # SecretFinder 발견 개수
         
-        ws_dash.append([dash_idx, domain, secret_criticals])
+        ws_dash.append([dash_idx, domain, total_urls, secret_criticals])
         dash_idx += 1
 
         # [B] High Risk 자산 분류 로직
@@ -126,7 +127,7 @@ def build_advanced_excel_report():
                 ws_high.append([high_risk_idx, domain, url, tool, reason])
                 high_risk_idx += 1
 
-        # [C] 3번째 탭부터 이어지는 개별 도메인 전용 시트 생성
+        # [C] 개별 도메인 전용 상세 시트 마감
         safe_tab_name = domain[:30]
         ws = wb.create_sheet(title=safe_tab_name)
         sheets_created += 1
@@ -140,7 +141,7 @@ def build_advanced_excel_report():
             cell.fill = fill_header
             cell.alignment = align_center
 
-        # 데이터 고속 사출 (성능 부하 원인 완전 제거)
+        # 데이터 고속 사출 루프 (OOM 과부하 원인 완전 배제 구조)
         for idx, (url, tool) in enumerate(sorted_dataset, 1):
             if idx > 1048500:
                 break
@@ -150,10 +151,11 @@ def build_advanced_excel_report():
         ws.column_dimensions['B'].width = 85
         ws.column_dimensions['C'].width = 18
 
-    # 5. 최상단 마스터 탭 2개 레이아웃 마감 (너비 조정)
+    # 5. 최상단 마스터 탭 2개 레이아웃 가로폭 최종 확정
     ws_dash.column_dimensions['A'].width = 8
-    ws_dash.column_dimensions['B'].width = 45
-    ws_dash.column_dimensions['C'].width = 35
+    ws_dash.column_dimensions['B'].width = 35
+    ws_dash.column_dimensions['C'].width = 25
+    ws_dash.column_dimensions['D'].width = 25
 
     ws_high.column_dimensions['A'].width = 8
     ws_high.column_dimensions['B'].width = 25
@@ -166,7 +168,7 @@ def build_advanced_excel_report():
         os.makedirs('reports', exist_ok=True)
         report_path = 'reports/passive_recon_report_v1.xlsx'
         wb.save(report_path)
-        print(f"[+] [SUCCESS] Master Report with Dedicated SecretFinder Dashboard generated at: {report_path}", flush=True)
+        print(f"[+] [SUCCESS] Master Report with Summary & SecretFinder Dashboard generated at: {report_path}", flush=True)
     else:
         print("[-] Error: Scan results were empty. Excel file not created.", flush=True)
 

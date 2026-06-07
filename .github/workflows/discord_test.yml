@@ -1,7 +1,7 @@
 name: ⚡ Excel & Discord Quick Test (10s)
 
 on:
-  workflow_dispatch: # 수동으로 이것만 틀어서 테스트
+  workflow_dispatch:
 
 jobs:
   test-pipeline:
@@ -10,7 +10,6 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-     Sir, Python Setup
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -19,7 +18,6 @@ jobs:
     - name: Install Dependencies
       run: pip install openpyxl requests
 
-    # 스캔을 뛰는 대신, 가상머신에 아주 가벼운 가짜 결과 파일과 타깃을 심어줍니다.
     - name: Create Mock Data for Testing
       run: |
         echo "target-site.com" > targets.txt
@@ -27,11 +25,9 @@ jobs:
         echo "https://target-site.com/api/v1/user" > results/mock_gau.txt
         echo "https://target-site.com/assets/main.js" > results/mock_waybackurls.txt
 
-    # 스캔 단계를 통째로 패스하고 곧바로 엑셀 조립 (1초)
     - name: Test Excel Builder
       run: python txt_to_excel.py
 
-    # 조립된 따끈한 파일 디코로 사출 (2초)
     - name: Upload Final Excel Report to Private Discord
       env:
         DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

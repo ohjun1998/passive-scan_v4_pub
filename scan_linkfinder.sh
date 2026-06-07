@@ -20,7 +20,7 @@ scan_jsluice() {
             # 아카이브 호출 없이, 주소록에 적힌 JS 소스코드를 즉시 파이프로 엮어 메모리 스캔
             curl -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" "$url" 2>/dev/null | jsluice urls 2>/dev/null >> "results/${domain}_jsluice_raw.json"
             sleep 0.5
-        } < "results/${domain}_js_temp.txt"
+        done < "results/${domain}_js_temp.txt" # ⬅️ 이 부분의 }를 done으로 수정했습니다!
 
         if [ -s "results/${domain}_jsluice_raw.json" ]; then
             # 기존 엑셀 리포터 호환을 위해 파일명을 _linkfinder.txt 로 복원 사출

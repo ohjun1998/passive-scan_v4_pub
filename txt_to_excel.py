@@ -6,7 +6,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# 💡 [복구 에러 해결 핵심] 기호로 시작하는 문자열이 수식으로 오인되어 엑셀이 파괴되는 현상 방지
+# 💡 [복구 에러 해결] 기호로 시작하는 문자열이 수식으로 오인되어 엑셀이 파괴되는 현상 방지
 def escape_formula(value):
     if isinstance(value, str) and value.startswith(('=', '+', '-', '@')):
         return "'" + value  # 앞에 ' 기호를 붙여 엑셀이 순수 문자열로 강제 인식하게 조치
@@ -19,6 +19,19 @@ def build_advanced_excel_report():
         return
     with open('targets.txt', 'r') as f:
         targets = [line.strip() for line in f if line.strip()]
+
+    # 💡 [원래 모양 복원 핵심] 1단계에서 생성된 파일명 -> 원본 URL 매핑 테이블 사전 로드
+    js_url_converter = {}
+    mapping_files = glob.glob('results/*_js_mapping.txt')
+    for mf in mapping_files:
+        try:
+            with open(mf, 'r', encoding='utf-8', errors='ignore') as f:
+                for line in f:
+                    if '\t' in line:
+                        safe_fname, original_url = line.strip().split('\t', 1)
+                        js_url_converter[safe_fname] = original_url
+        except Exception as e:
+            print(f"[-] Warning: Failed to read mapping file {mf}: {e}", flush=True)
 
     # 다차원 데이터 매트릭스 선언
     matrix_data = {domain: {} for domain in targets}
@@ -55,6 +68,10 @@ def build_advanced_excel_report():
                         url = parts[1]
                     else:
                         url = line_str
+                    
+                    # 💡 [원래 모양 복원 연동 기전] 언더바 파일명을 원래의 예쁜 URL 주소 형태로 치환
+                    if js_file in js_url_converter:
+                        js_file = js_url_converter[js_file]
                     
                     for domain in targets:
                         if domain in url or domain in filename:
@@ -136,7 +153,7 @@ def build_advanced_excel_report():
             jsluice_count = sum(1 for url, data in url_map.items() if 'LinkFinder' in data["tools"])
             trufflehog_count = sum(1 for url, data in url_map.items() if 'TruffleHog' in data["tools"])
         
-        # 대시보드 행 삽입 (도메인 이름 수식 우회 처리)
+        # 대시보드 행 삽입
         ws_dash.append([dash_idx - 1, escape_formula(domain), passive_url_count, jsluice_count, trufflehog_count])
         ws_dash.row_dimensions[dash_idx].height = 22
         
@@ -164,7 +181,7 @@ def build_advanced_excel_report():
         sheets_created += 1
         ws.append(["No", "Source Tool", "Found in JS File", "Target URL / Endpoint"]) 
         ws.row_dimensions[1].height = 28
-        for col_num in range(1, 4):
+        for col_num in range(1, 5):
             cell = ws.cell(row=1, column=col_num)
             cell.font = font_header
             cell.fill = fill_header
@@ -176,7 +193,7 @@ def build_advanced_excel_report():
             tools_str = ", ".join(sorted(list(data["tools"])))
             files_str = ", ".join(sorted(list(data["files"]))) if data["files"] else "-"
             
-            # 💡 [복구 에러 해결 핵심] 수식 오인 유발 텍스트 전원 우회 시 사출 기전 처리
+            # 수식 오인 유발 텍스트 우회 처리 이식
             ws.append([sub_idx, escape_formula(tools_str), escape_formula(files_str), escape_formula(url)]) 
             
             row_num = sub_idx + 1
@@ -187,7 +204,7 @@ def build_advanced_excel_report():
                 if (row_num % 2) == 1: cell.fill = fill_zebra
                 
                 if c in [3, 4]:
-                    cell.alignment = align_left # 요구사항에 맞춰 줄바꿈(Wrap) 해제 보존
+                    cell.alignment = align_left  # 한 줄 슬라이스 규격 (줄바꿈 해제 상태 보존)
                 else:
                     cell.alignment = align_center
 
@@ -204,7 +221,6 @@ def build_advanced_excel_report():
                     reason = f"민감 키워드 파라미터 감지 ({', '.join(matched_keys)})"
                     
             if is_high_risk:
-                # 💡 하이 리스크 시트 데이터도 수식 오인 우회 필터 적용
                 ws_high.append([
                     high_risk_idx - 1, 
                     escape_formula(tools_str), 
@@ -226,7 +242,7 @@ def build_advanced_excel_report():
                 high_risk_idx += 1
 
     # ==========================================
-    # 5. Dashboard 최하단 자동 Total(합계) 행 연산부 (검증된 수식만 허용)
+    # 5. Dashboard 최하단 자동 Total(합계) 행 연산부
     # ==========================================
     if dash_idx > 2:
         ws_dash.append([
@@ -268,11 +284,10 @@ def build_advanced_excel_report():
             
             calculated_width = max(max_len + 4, 12)
             
-            # 폭을 시원하게 늘려 한 줄로 잘려 보이기 좋게 고정폭 유지
             if header_value in ["High Risk URL / Endpoint", "Target URL / Endpoint"]:
                 sheet.column_dimensions[col_letter].width = 80  
             elif header_value == "Found in JS File":
-                sheet.column_dimensions[col_letter].width = 50  
+                sheet.column_dimensions[col_letter].width = 50  # 복원된 온전한 긴 주소 가독성 마진폭 확보
             elif header_value == "Risk Reason":
                 sheet.column_dimensions[col_letter].width = 40  
             else:

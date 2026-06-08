@@ -88,8 +88,13 @@ jobs:
           go install github.com/BishopFox/jsluice/cmd/jsluice@latest
           sudo apt-get install jq -y
         elif [ "${{ matrix.tool }}" = "trufflehog" ]; then
-          # [WAF 및 504 에러 방지 핵심] 깃허브 최신 태그 API 조회를 생략하고 Go 빌드 시스템을 통해 직접 설치합니다.
-          go install github.com/trufflesecurity/trufflehog/v3@latest
+          # [에러 완벽 해결선]: go.mod 내 replace 구문 제약 및 504 API 서버 지연을 원천 회피하기 위해,
+          # 검증된 최신 안정 버전의 공식 리눅스 바이너리를 직접 다운로드하고 네트워크 실패 시 자동 재시도(--retry)하도록 설계했습니다.
+          TRUFFLEHOG_VER="3.82.0"
+          curl -sSfL --retry 5 --retry-delay 5 "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VER}/trufflehog_${TRUFFLEHOG_VER}_linux_amd64.tar.gz" -o trufflehog.tar.gz
+          tar -xzf trufflehog.tar.gz trufflehog 2>/dev/null || tar -xzf trufflehog.tar.gz
+          sudo mv trufflehog /usr/local/bin/
+          rm -f trufflehog.tar.gz
         fi
         echo "$HOME/go/bin" >> $GITHUB_PATH
 

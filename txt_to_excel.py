@@ -3,7 +3,8 @@ import os
 import glob
 import re
 import json
-from urllib.parse import urlparse
+import posixpath
+from urllib.parse import urlparse, parse_qsl
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
@@ -31,7 +32,7 @@ def get_safe_domain(target):
     return "wild_" + target[2:] if target.startswith('*.') else target
 
 def build_advanced_excel_report():
-    print("[+] 고품질 엑셀 대시보드 사출 엔진 가동 중...", flush=True)
+    print("[+] 스마트 필터링 기반 엑셀 대시보드 사출 엔진 가동 중...", flush=True)
     if not os.path.exists('targets.txt'): return
     with open('targets.txt', 'r') as f: targets = [line.strip() for line in f if line.strip()]
 
@@ -47,6 +48,9 @@ def build_advanced_excel_report():
         except: pass
 
     matrix_data = {raw_target: {} for raw_target in targets}
+    
+    # 💡 엑셀 출력부 시그니처 카운터 보관소 (동적 경로 필터링 대응)
+    signature_counts = {}
     
     for file_path in glob.glob('results/*.*'):
         filename = os.path.basename(file_path).lower()
@@ -89,8 +93,19 @@ def build_advanced_excel_report():
                         if parsed_netloc != base_domain:
                             continue
 
+                    # 💡 [진화된 핵심 최적화] 동일한 구조의 디렉토리, 확장자, 쿼리를 가진 URL을 5개까지만 기록
+                    parsed_for_sig = urlparse(abs_url)
+                    query_keys = tuple(sorted([k for k, v in parse_qsl(parsed_for_sig.query, keep_blank_values=True)]))
+                    path_dir = posixpath.dirname(parsed_for_sig.path)
+                    path_ext = posixpath.splitext(parsed_for_sig.path)[1]
+                    signature = (parsed_for_sig.netloc, path_dir, path_ext, query_keys)
+
                     if abs_url not in matrix_data[raw_target]:
+                        if signature_counts.get(signature, 0) >= 5:
+                            continue # 구조가 동일한 6번째 URL부터는 엑셀에서 버림
+                        signature_counts[signature] = signature_counts.get(signature, 0) + 1
                         matrix_data[raw_target][abs_url] = {"tools": set(), "files": set()}
+                        
                     matrix_data[raw_target][abs_url]["tools"].add(source_tool)
                     if source_tool in ['LinkFinder', 'TruffleHog']:
                         matrix_data[raw_target][abs_url]["files"].add(js_file)
@@ -115,7 +130,7 @@ def build_advanced_excel_report():
 
     ws_dash = wb.active
     ws_dash.title = "Summary Dashboard"
-    ws_dash.append(["No", "타겟 도메인", "총 발견 URL 수", "jsluice 추출 개수", "TruffleHog 탐지 개수"])
+    ws_dash.append(["No", "타겟 도메인", "정제된 총 URL 수", "jsluice 추출 개수", "TruffleHog 탐지 개수"])
     for c in range(1, 6): ws_dash.cell(1, c).font = font_header; ws_dash.cell(1, c).fill = fill_header; ws_dash.cell(1, c).alignment = align_center; ws_dash.cell(1, c).border = thin_border
 
     ws_high = wb.create_sheet(title="High Risk Targets")
@@ -126,7 +141,6 @@ def build_advanced_excel_report():
     dash_idx, high_risk_idx = 2, 2  
 
     for raw_target, url_map in matrix_data.items():
-        # 시트 이름에 * 와 같은 특수기호가 들어가면 엑셀 에러가 발생하므로 _ 로 치환
         sheet_title = re.sub(r'[\\/\?\*\:\[\]]', '_', raw_target)[:30]
         passive_count = sum(1 for data in url_map.values() if 'Waybackurls' in data["tools"] or 'GAU' in data["tools"])
         jsluice_count = sum(1 for data in url_map.values() if 'LinkFinder' in data["tools"])

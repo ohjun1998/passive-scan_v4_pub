@@ -14,18 +14,26 @@ collect_master() {
     local safe_domain="$raw_domain"
     local regex="^https?://${raw_domain//./\.}(/|$)"
 
+    # 와일드카드 처리 로직 (*.test.com -> Subfinder 서브도메인 탐지 통합)
     if [[ "$raw_domain" == \** ]]; then
         base_domain="${raw_domain#\*.}"
         safe_domain="wild_${base_domain}"
         regex="^https?://([a-zA-Z0-9.-]+\.)?${base_domain//./\.}(/|$)"
-        echo "[+] [${raw_domain}] 🔍 와일드카드 감지: 루트 도메인($base_domain)과 서브도메인을 동시에 긁어옵니다."
+        echo "[+] [${raw_domain}] 🔍 와일드카드 감지: Subfinder로 서브도메인을 전수조사한 후 아카이빙을 진행합니다."
         
-        # 💡 [핵심 최적화] 아카이브 누락 방지를 위해 루트 도메인과 와일드카드 도메인을 동시에 질의하여 병합
-        (echo "$base_domain"; echo "*.$base_domain") | gau --subs > "results/${safe_domain}_gau.txt" 2>/dev/null
-        (echo "$base_domain"; echo "*.$base_domain") | waybackurls > "results/${safe_domain}_waybackurls.txt" 2>/dev/null
+        # 💡 [핵심 최적화] Subfinder 구동 및 루트 도메인 포함
+        subfinder -d "$base_domain" -all -silent > "results/${safe_domain}_subs.txt"
+        echo "$base_domain" >> "results/${safe_domain}_subs.txt"
+        sort -u "results/${safe_domain}_subs.txt" -o "results/${safe_domain}_subs.txt"
+        
+        local sub_count=$(wc -l < "results/${safe_domain}_subs.txt")
+        echo "  -> [Subfinder] 총 ${sub_count}개의 서브도메인을 발견했습니다. (아카이브 추적 동시 가동)"
+        
+        # 발견된 전체 서브도메인 리스트를 통째로 파이프로 넘겨서 속도와 정확도를 극대화
+        cat "results/${safe_domain}_subs.txt" | gau > "results/${safe_domain}_gau.txt" 2>/dev/null
+        cat "results/${safe_domain}_subs.txt" | waybackurls > "results/${safe_domain}_waybackurls.txt" 2>/dev/null
     else
         echo "[+] [${raw_domain}] 🔍 단일 도메인 감지: 서브도메인을 엄격히 차단하고 정찰합니다."
-        
         echo "$base_domain" | gau > "results/${safe_domain}_gau.txt" 2>/dev/null
         echo "$base_domain" | waybackurls > "results/${safe_domain}_waybackurls.txt" 2>/dev/null
     fi
